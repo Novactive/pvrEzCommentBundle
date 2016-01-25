@@ -67,8 +67,9 @@ class Comment
     public function getComments( $contentId )
     {
         $viewParameters = $this->requestStack->getCurrentRequest()->attributes->get( 'viewParameters' );
-        $comments = $this->contentManager->getComments( $this->connection, $contentId, $viewParameters );
-
+        $hasAccess    = $this->repository->hasAccess('comment','*');
+        $sessionId = $this->requestStack->getCurrentRequest()->getSession()->getId();
+        $comments = $this->contentManager->getComments( $this->connection, $contentId, $hasAccess,$sessionId, $viewParameters );
         return
             array(
                 'comments'  => $comments,

@@ -29,7 +29,7 @@ interface PvrEzCommentManagerInterface
      * @return mixed Array or false
      * @throws \Exception
      */
-    public function getComments( $connection, $contentId, $viewParameters = array(), $status = self::COMMENT_ACCEPT );
+    public function getComments( $connection, $contentId, $hasAccess = false, $sessionId = null, $viewParameters = array(), $status = self::COMMENT_ACCEPT );
 
     /**
      * @param $connection
