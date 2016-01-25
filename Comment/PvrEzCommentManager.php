@@ -111,7 +111,7 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
      * @param int $status
      * @return mixed Array or false
      */
-    public function getComments( $connection, $contentId, $viewParameters = array(), $status = self::COMMENT_ACCEPT )
+    public function getComments( $connection, $contentId, $hasAccess = false, $sessionId = null, $viewParameters = array(), $status = self::COMMENT_ACCEPT )
     {
         $this->checkConnection( $connection );
         /** @var \eZ\Publish\Core\Persistence\Database\SelectQuery $selectQuery */
@@ -129,6 +129,18 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
                 $sort = $selectQuery::ASC;
         }
 
+       if($hasAccess) {
+           $status_condition = $selectQuery->expr->neq(
+               $connection->quoteColumn( 'status' ),
+               $selectQuery->bindValue( self::COMMENT_REJECTED, null, \PDO::PARAM_STR )
+           );
+       } else {
+           $status_condition = $selectQuery->expr->eq(
+               $connection->quoteColumn( 'status' ),
+               $selectQuery->bindValue( self::COMMENT_ACCEPT, null, \PDO::PARAM_STR )
+           );
+       }
+
         //Get Parents Comments
         $selectQuery->select(
             $connection->quoteColumn( 'id' ),
@@ -139,6 +151,7 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
             $connection->quoteColumn( 'url' ),
             $connection->quoteColumn( 'text' ),
             $connection->quoteColumn( 'title' ),
+            $connection->quoteColumn( 'status' ),
             $connection->quoteColumn( 'parent_comment_id' )
         )->from(
                 $connection->quoteTable( 'ezcomment' )
@@ -149,19 +162,18 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
                         $selectQuery->bindValue( $contentId, null, \PDO::PARAM_INT )
                     ),
                     $selectQuery->expr->eq(
-                        $connection->quoteColumn( 'status' ),
-                        $selectQuery->bindValue( $status, null, \PDO::PARAM_INT )
-                    ),
-                    $selectQuery->expr->eq(
                         $connection->quoteColumn( 'parent_comment_id' ),
                         $selectQuery->bindValue( 0, null, \PDO::PARAM_INT )
-                    )
+                    ),
+                    $status_condition
                 )
             )->orderBy( $column, $sort );
+
         $statement = $selectQuery->prepare();
         $statement->execute();
 
         $comments = $statement->fetchAll( \PDO::FETCH_ASSOC );
+
         if($this->comment_reply) {
             //Get Childs Comments
             $selectQuery = $connection->createSelectQuery();
@@ -174,6 +186,7 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
                 $connection->quoteColumn( 'url' ),
                 $connection->quoteColumn( 'text' ),
                 $connection->quoteColumn( 'title' ),
+                $connection->quoteColumn( 'status' ),
                 $connection->quoteColumn( 'parent_comment_id' )
             )->from(
                 $connection->quoteTable( 'ezcomment' )
@@ -183,14 +196,11 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
                         $connection->quoteColumn( 'contentobject_id' ),
                         $selectQuery->bindValue( $contentId, null, \PDO::PARAM_INT )
                     ),
-                    $selectQuery->expr->eq(
-                        $connection->quoteColumn( 'status' ),
-                        $selectQuery->bindValue( $status, null, \PDO::PARAM_INT )
-                    ),
                     $selectQuery->expr->neq(
                         $connection->quoteColumn( 'parent_comment_id' ),
                         $selectQuery->bindValue( 0, null, \PDO::PARAM_INT )
-                    )
+                    ),
+                    $status_condition
                 )
             )->orderBy( $column, $sort );
             $statement = $selectQuery->prepare();
@@ -198,7 +208,18 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
 
             $childs = $statement->fetchAll( \PDO::FETCH_ASSOC );
 
+            for($i=0; $i < count($childs); $i++) {
+                if(!$childs[$i]['status']) {
+                    $childs[$i]['approve'] = $this->getModerationURL($contentId,$childs[$i]['id'], $sessionId, 'approve' );
+                    $childs[$i]['reject']  = $this->getModerationURL($contentId,$childs[$i]['id'], $sessionId, 'reject' );
+                }
+            }
+
             for($i=0; $i < count($comments); $i++) {
+                if(!$comments[$i]['status']) {
+                    $comments[$i]['approve'] = $this->getModerationURL($contentId,$comments[$i]['id'], $sessionId, 'approve' );
+                    $comments[$i]['reject']  = $this->getModerationURL($contentId,$comments[$i]['id'], $sessionId, 'reject' );
+                }
                 for($j=0; $j < count($childs); $j++) {
                     if($comments[$i]['id'] == $childs[$j]['parent_comment_id']){
                         $comments[$i]['children'][] = $childs[$j];
@@ -413,28 +434,8 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
             $email  = $user->email;
         }
 
-        $encodeSession = $this->encryption->encode( $sessionId );
-
-        $approve_url = $this->router->generate(
-            'pvrezcomment_moderation',
-            array(
-                'contentId' => $contentId,
-                'sessionHash' => $encodeSession,
-                'action' => 'approve',
-                'commentId' => $commentId
-            ),
-            true
-        );
-        $reject_url = $this->router->generate(
-            'pvrezcomment_moderation',
-            array(
-                'contentId' => $contentId,
-                'sessionHash' => $encodeSession,
-                'action' => 'reject',
-                'commentId' => $commentId
-            ),
-            true
-        );
+        $approve_url = $this->getModerationURL($contentId,$commentId, $sessionId, 'approve' );
+        $reject_url = $this->getModerationURL($contentId,$commentId, $sessionId, 'reject' );
 
         $message = \Swift_Message::newInstance()
             ->setSubject( $this->moderate_subject )
@@ -451,6 +452,7 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
             );
         $this->mailer->send( $message );
     }
+
 
     /**
      * Check if status of comment is on waiting
@@ -588,6 +590,24 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
     public function hasModeration()
     {
         return $this->moderating;
+    }
+
+    /**
+     * @return bool
+     */
+    public function getModerationURL($contentId, $commentId, $sessionId, $type)
+    {
+        $encodeSession = $this->encryption->encode( $sessionId );
+        return $this->router->generate(
+            'pvrezcomment_moderation',
+            array(
+                'contentId' => $contentId,
+                'sessionHash' => $encodeSession,
+                'action' => $type,
+                'commentId' => $commentId
+            ),
+            true
+        );
     }
 
 
