@@ -113,101 +113,10 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
      */
     public function getComments( $connection, $contentId, $hasAccess = false, $sessionId = null, $viewParameters = array(), $status = self::COMMENT_ACCEPT )
     {
-        $this->checkConnection( $connection );
-        /** @var \eZ\Publish\Core\Persistence\Database\SelectQuery $selectQuery */
-        $selectQuery = $connection->createSelectQuery();
-
-        $column = "created";
-        $sort   = $selectQuery::DESC;
-
-        // Configure how to sort things
-        if ( !empty( $viewParameters ) )
-        {
-            if ( $viewParameters['cSort'] == "author" )
-                $column = "name";
-            if ( $viewParameters['cOrder'] == 'asc' )
-                $sort = $selectQuery::ASC;
-        }
-
-       if($hasAccess) {
-           $status_condition = $selectQuery->expr->neq(
-               $connection->quoteColumn( 'status' ),
-               $selectQuery->bindValue( self::COMMENT_REJECTED, null, \PDO::PARAM_STR )
-           );
-       } else {
-           $status_condition = $selectQuery->expr->eq(
-               $connection->quoteColumn( 'status' ),
-               $selectQuery->bindValue( self::COMMENT_ACCEPT, null, \PDO::PARAM_STR )
-           );
-       }
-
-        //Get Parents Comments
-        $selectQuery->select(
-            $connection->quoteColumn( 'id' ),
-            $connection->quoteColumn( 'created' ),
-            $connection->quoteColumn( 'user_id' ),
-            $connection->quoteColumn( 'name' ),
-            $connection->quoteColumn( 'email' ),
-            $connection->quoteColumn( 'url' ),
-            $connection->quoteColumn( 'text' ),
-            $connection->quoteColumn( 'title' ),
-            $connection->quoteColumn( 'status' ),
-            $connection->quoteColumn( 'parent_comment_id' )
-        )->from(
-                $connection->quoteTable( 'ezcomment' )
-            )->where(
-                $selectQuery->expr->lAnd(
-                    $selectQuery->expr->eq(
-                        $connection->quoteColumn( 'contentobject_id' ),
-                        $selectQuery->bindValue( $contentId, null, \PDO::PARAM_INT )
-                    ),
-                    $selectQuery->expr->eq(
-                        $connection->quoteColumn( 'parent_comment_id' ),
-                        $selectQuery->bindValue( 0, null, \PDO::PARAM_INT )
-                    ),
-                    $status_condition
-                )
-            )->orderBy( $column, $sort );
-
-        $statement = $selectQuery->prepare();
-        $statement->execute();
-
-        $comments = $statement->fetchAll( \PDO::FETCH_ASSOC );
-
+        $comments = $this->getCommentsList($connection, $contentId, $hasAccess,true);
         if($this->comment_reply) {
             //Get Childs Comments
-            $selectQuery = $connection->createSelectQuery();
-            $selectQuery->select(
-                $connection->quoteColumn( 'id' ),
-                $connection->quoteColumn( 'created' ),
-                $connection->quoteColumn( 'user_id' ),
-                $connection->quoteColumn( 'name' ),
-                $connection->quoteColumn( 'email' ),
-                $connection->quoteColumn( 'url' ),
-                $connection->quoteColumn( 'text' ),
-                $connection->quoteColumn( 'title' ),
-                $connection->quoteColumn( 'status' ),
-                $connection->quoteColumn( 'parent_comment_id' )
-            )->from(
-                $connection->quoteTable( 'ezcomment' )
-            )->where(
-                $selectQuery->expr->lAnd(
-                    $selectQuery->expr->eq(
-                        $connection->quoteColumn( 'contentobject_id' ),
-                        $selectQuery->bindValue( $contentId, null, \PDO::PARAM_INT )
-                    ),
-                    $selectQuery->expr->neq(
-                        $connection->quoteColumn( 'parent_comment_id' ),
-                        $selectQuery->bindValue( 0, null, \PDO::PARAM_INT )
-                    ),
-                    $status_condition
-                )
-            )->orderBy( $column, $sort );
-            $statement = $selectQuery->prepare();
-            $statement->execute();
-
-            $childs = $statement->fetchAll( \PDO::FETCH_ASSOC );
-
+            $childs = $this->getCommentsList($connection, $contentId, $hasAccess,false);
             for($i=0; $i < count($childs); $i++) {
                 if(!$childs[$i]['status']) {
                     $childs[$i]['approve'] = $this->getModerationURL($contentId,$childs[$i]['id'], $sessionId, 'approve' );
@@ -228,6 +137,76 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
             }
         }
         return $comments;
+    }
+
+    private function getCommentsList($connection, $contentId, $hasAccess = false, $is_parent = false) {
+        $this->checkConnection( $connection );
+        /** @var \eZ\Publish\Core\Persistence\Database\SelectQuery $selectQuery */
+        $selectQuery = $connection->createSelectQuery();
+
+        $column = "created";
+        $sort   = $selectQuery::DESC;
+
+        // Configure how to sort things
+        if ( !empty( $viewParameters ) )
+        {
+            if ( $viewParameters['cSort'] == "author" )
+                $column = "name";
+            if ( $viewParameters['cOrder'] == 'asc' )
+                $sort = $selectQuery::ASC;
+        }
+
+        if($hasAccess) {
+            $status_condition = $selectQuery->expr->neq(
+                $connection->quoteColumn( 'status' ),
+                $selectQuery->bindValue( self::COMMENT_REJECTED, null, \PDO::PARAM_INT )
+            );
+        } else {
+            $status_condition = $selectQuery->expr->eq(
+                $connection->quoteColumn( 'status' ),
+                $selectQuery->bindValue( self::COMMENT_ACCEPT, null, \PDO::PARAM_INT )
+            );
+        }
+
+        if($is_parent) {
+            $parent_condition = $selectQuery->expr->eq(
+                $connection->quoteColumn( 'parent_comment_id' ),
+                $selectQuery->bindValue( 0, null, \PDO::PARAM_INT )
+            );
+        } else {
+            $parent_condition = $selectQuery->expr->neq(
+                $connection->quoteColumn( 'parent_comment_id' ),
+                $selectQuery->bindValue( 0, null, \PDO::PARAM_INT )
+            );
+        }
+
+        $selectQuery->select(
+            $connection->quoteColumn( 'id' ),
+            $connection->quoteColumn( 'created' ),
+            $connection->quoteColumn( 'user_id' ),
+            $connection->quoteColumn( 'name' ),
+            $connection->quoteColumn( 'email' ),
+            $connection->quoteColumn( 'url' ),
+            $connection->quoteColumn( 'text' ),
+            $connection->quoteColumn( 'title' ),
+            $connection->quoteColumn( 'status' ),
+            $connection->quoteColumn( 'parent_comment_id' )
+        )->from(
+            $connection->quoteTable( 'ezcomment' )
+        )->where(
+            $selectQuery->expr->lAnd(
+                $selectQuery->expr->eq(
+                    $connection->quoteColumn( 'contentobject_id' ),
+                    $selectQuery->bindValue( $contentId, null, \PDO::PARAM_INT )
+                ),
+                $parent_condition,
+                $status_condition
+            )
+        )->orderBy( $column, $sort );
+
+        $statement = $selectQuery->prepare();
+        $statement->execute();
+        return $statement->fetchAll( \PDO::FETCH_ASSOC );
     }
 
     /**
