@@ -24,6 +24,7 @@ use Symfony\Component\Validator\Constraints\Email;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\Collection;
 use Symfony\Component\Form\Form;
+use eZ\Publish\API\Repository\Repository;
 
 class PvrEzCommentManager implements PvrEzCommentManagerInterface
 {
@@ -47,6 +48,8 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
     protected $templating;
     protected $mailer;
     protected $encryption;
+    /** @var \eZ\Publish\API\Repository\Repository $repository */
+    protected $repository;
 
     public function __construct( $config, \Swift_Mailer $mailer, PvrEzCommentEncryption $encryption, ChainRouter   $router  )
     {
@@ -82,6 +85,11 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
     public function setTemplating( DelegatingEngine $templating )
     {
         $this->templating = $templating;
+    }
+
+    public function setRepository( Repository $repository )
+    {
+        $this->repository = $repository;
     }
 
     /**
@@ -416,8 +424,17 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
         $approve_url = $this->getModerationURL($contentId,$commentId, $sessionId, 'approve' );
         $reject_url = $this->getModerationURL($contentId,$commentId, $sessionId, 'reject' );
 
+        $content = $this->repository->getContentService()->loadContent($contentId);
+        $article_nom = $content->getFieldValue('title')->text;
+        $subject = $article_nom.' - '.$this->moderate_subject;
+        $article_url = $this->router->generate(
+            'ez_urlalias',
+            array( 'contentId' => $contentId ),
+            true
+        );
         $message = \Swift_Message::newInstance()
-            ->setSubject( $this->moderate_subject )
+            ->setContentType('text/html')
+            ->setSubject( $subject )
             ->setFrom( $this->moderate_from )
             ->setTo( $this->moderate_to )
             ->setBody(
@@ -425,6 +442,8 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
                     "name"  => $name,
                     "email" => $email,
                     "comment" => $data[ $this->translator->trans( 'message' )],
+                    "article_url" => $article_url,
+                    "article_nom" => $article_nom,
                     "approve_url" => $approve_url,
                     "reject_url" => $reject_url
                 ))
