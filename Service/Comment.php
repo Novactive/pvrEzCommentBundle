@@ -75,7 +75,7 @@ class Comment
                 'comments'  => $comments,
                 'contentId' => $contentId,
                 'reply'     => $this->contentManager->canReply(),
-                'has_access'=> $hasAccess,
+                'has_access'=> $hasAccess
 
             );
     }
