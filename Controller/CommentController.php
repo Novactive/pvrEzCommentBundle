@@ -12,8 +12,10 @@
 namespace pvr\EzCommentBundle\Controller;
 
 use eZ\Bundle\EzPublishCoreBundle\Controller;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 class CommentController extends Controller
 {
@@ -50,7 +52,6 @@ class CommentController extends Controller
     public function getFormCommentAction( $contentId, $params = array() )
     {
         $form = $this->container->get( 'pvr_ezcomment.service' )->generateForm();
-
         $template = isset( $params['template'] ) ? $params['template'] : 'PvrEzCommentBundle:blog:form_comments.html.twig';
 
         return $this->render(
@@ -103,9 +104,7 @@ class CommentController extends Controller
                 // Update status
                 if ( $pvrEzCommentManager->updateStatus( $connection, $commentId ) )
                 {
-                    return new Response(
-                        $this->container->get( 'translator' )->trans( "Comment publish !" )
-                    );
+                    return new RedirectResponse($this->generateUrl('ez_legacy',['siteaccess'=>'administrer', 'module_uri'=>'comment/list'],UrlGeneratorInterface::ABSOLUTE_URL).'?action=approved');
                 }
             }
             else
@@ -113,9 +112,7 @@ class CommentController extends Controller
                 // Update status
                 if ( $pvrEzCommentManager->updateStatus( $connection, $commentId, $pvrEzCommentManager::COMMENT_REJECTED ) )
                 {
-                    return new Response(
-                        $this->container->get( 'translator' )->trans( "Comment rejected !" )
-                    );
+                    return new RedirectResponse($this->generateUrl('ez_legacy',['siteaccess'=>'administrer', 'module_uri'=>'comment/list'],UrlGeneratorInterface::ABSOLUTE_URL).'?action=rejected');
                 }
             }
 
