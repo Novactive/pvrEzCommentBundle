@@ -20,6 +20,7 @@ services:
             - [ setTranslator, ["@translator"] ]
             - [ setFormFactory, ["@form.factory"] ]
             - [ setTemplating, ["@templating"] ]
+            - [ setRepository, ["@ezpublish.api.repository"] ]
 
     pvr_ezcomment.encryption:
         class: %pvr_ezcomment.encryption.class%
