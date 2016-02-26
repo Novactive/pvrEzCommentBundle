@@ -425,6 +425,11 @@ class PvrEzCommentManager implements PvrEzCommentManagerInterface
         $reject_url = $this->getModerationURL($contentId,$commentId, $sessionId, 'reject' );
 
         $content = $this->repository->getContentService()->loadContent($contentId);
+        $contentType = $this->repository->getContentTypeService()->loadContentType($content->getVersionInfo()->getContentInfo()->contentTypeId);
+        if($contentType->identifier == 'livre_or') {
+            $this->moderate_template = 'DigitInnFrontBundle:Mail:livre_dor_comment_moderation.html.twig';
+        }
+
         $article_nom = $content->getFieldValue('title')->text;
         $subject = $article_nom.' - '.$this->moderate_subject;
         $article_url = $this->router->generate(
